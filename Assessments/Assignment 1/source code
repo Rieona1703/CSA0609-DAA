@@ -1,0 +1,162 @@
+import random
+import time
+import csv
+import sys
+sys.setrecursionlimit(10000)
+def linear(a, key):
+    """Approach A: brute-force linear search."""
+    c = 0
+    for i in range(len(a)):
+        c += 1                      
+        if a[i] == key:
+            return i, c
+    return -1, c
+def bin_rec(a, key, lo, hi, c=0):
+    if lo > hi:                    
+        return -1, c
+    mid = (lo + hi) // 2
+    c += 1                        
+    if a[mid] == key:
+        return mid, c
+    if key < a[mid]:
+        return bin_rec(a, key, lo, mid - 1, c)
+    return bin_rec(a, key, mid + 1, hi, c)
+class HashTable:
+    def __init__(self, m):
+        self.m = m
+        self.t = [[] for _ in range(m)]
+    def insert(self, key):
+        self.t[key % self.m].append(key)
+    def find(self, key):
+        c = 0
+        for x in self.t[key % self.m]:
+            c += 1
+            if x == key:
+                return True, c
+        return False, max(c, 1)     
+def make_dataset(n, seed=42):
+    random.seed(seed)
+    return random.sample(range(10**7, 10**9), n)
+def run_tests(n=1000):
+    data = make_dataset(n)
+    s = sorted(data)
+    h = HashTable(2 * n)
+    for x in data:
+        h.insert(x)
+    cases = [("First element of unsorted list", data[0]),
+             ("Last element of unsorted list", data[-1]),
+             ("Middle element of sorted list", s[(n - 1) // 2]),
+             ("Smallest key", s[0]),
+             ("Largest key", s[-1]),
+             ("Absent key below minimum", 5),
+             ("Absent key above maximum", 10**10)]
+    present_set = set(data)
+    print(f"\nEdge-case tests (n = {n}): comparisons [Linear | Binary | Hash]")
+    rows = []
+    for name, k in cases:
+        i, lc = linear(data, k)
+        j, bc = bin_rec(s, k, 0, n - 1)
+        f, hc = h.find(k)
+        present = k in present_set
+        assert (i != -1) == present and (j != -1) == present and f == present, name
+        if present:
+            assert data[i] == k and s[j] == k
+        print(f"  {name:34s} found={present!s:5s} {lc:7d} | {bc:3d} | {hc:2d}")
+        rows.append((name, present, lc, bc, hc))
+    random.seed(1)
+    for k in random.sample(data, min(200, n)):
+        assert linear(data, k)[0] != -1
+        assert bin_rec(s, k, 0, n - 1)[0] != -1
+        assert h.find(k)[0] is True
+    print("All correctness tests passed.")
+    return rows
+def benchmark(sizes=(1000, 10000, 100000, 1000000), repeats=3):
+    results = []
+    for n in sizes:
+        data = make_dataset(n)
+        t = time.perf_counter()
+        s = sorted(data)
+        sort_t = time.perf_counter() - t
+        t = time.perf_counter()
+        h = HashTable(2 * n)
+        for x in data:
+            h.insert(x)
+        build_t = time.perf_counter() - t
+        Q = 1000 if n <= 10000 else 300
+        random.seed(7)
+        queries = random.sample(data, Q)
+        lt, bt, ht = [], [], []
+        lc = bc = hc = 0
+        for _ in range(repeats):    
+            t = time.perf_counter()
+            lc = sum(linear(data, k)[1] for k in queries)
+            lt.append((time.perf_counter() - t) / Q * 1000)
+            t = time.perf_counter()
+            bc = sum(bin_rec(s, k, 0, n - 1)[1] for k in queries)
+            bt.append((time.perf_counter() - t) / Q * 1000)
+            t = time.perf_counter()
+            hc = sum(h.find(k)[1] for k in queries)
+            ht.append((time.perf_counter() - t) / Q * 1000)
+        mean = lambda L: sum(L) / len(L)
+        worst_l = linear(data, 5)[1]
+        worst_b = bin_rec(s, 5, 0, n - 1)[1]
+        chain = max(len(b) for b in h.t)
+        results.append(dict(n=n, sort_s=sort_t, hash_build_s=build_t,
+                            lin_ms=mean(lt), bin_ms=mean(bt), hash_ms=mean(ht),
+                            lin_cmp=lc / Q, bin_cmp=bc / Q, hash_cmp=hc / Q,
+                            lin_worst=worst_l, bin_worst=worst_b,
+                            max_chain=chain))
+        r = results[-1]
+        print(f"n={n:>8,} time(ms) L={r['lin_ms']:.4f} B={r['bin_ms']:.5f} "
+              f"H={r['hash_ms']:.5f} | "
+              f"cmps L={r['lin_cmp']:.1f} B={r['bin_cmp']:.2f} H={r['hash_cmp']:.2f} | "
+              f"sort={sort_t:.4f}s build={build_t:.4f}s")
+    return results
+def save_and_plot(results):
+    with open("results.csv", "w", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=results[0].keys())
+        w.writeheader()
+        w.writerows(results)
+    try:
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+    except ImportError:
+        print("matplotlib not installed: skipping graphs (pip install matplotlib)")
+        return
+    n = [r["n"] for r in results]
+    for key, ylabel, fn in (("cmp", "Average comparisons", "fig_comparisons.png"),
+                            ("ms", "Average time per search (ms)", "fig_time.png")):
+        plt.figure(figsize=(6, 3.6))
+        for pre, lab, mk in (("lin", "Linear", "o-"),
+                             ("bin", "Binary", "s-"),
+                             ("hash", "Hash", "^-")):
+            plt.loglog(n, [r[f"{pre}_{key}"] for r in results], mk, label=lab)
+        plt.xlabel("n (number of records)")
+        plt.ylabel(ylabel)
+        plt.grid(True, which="both", alpha=.3)
+        plt.legend()
+        plt.tight_layout()
+        plt.savefig(fn, dpi=150)
+        plt.close()
+    r = results[-1]
+    qs = [10 ** (i / 10) for i in range(0, 71)]
+    lin = [q * r["lin_ms"] / 1000 for q in qs]
+    binary = [r["sort_s"] + q * r["bin_ms"] / 1000 for q in qs]
+    hsh = [r["hash_build_s"] + q * r["hash_ms"] / 1000 for q in qs]
+    plt.figure(figsize=(6, 3.6))
+    plt.loglog(qs, lin, label="Linear (no preprocessing)")
+    plt.loglog(qs, binary, label="Binary (sort + search)")
+    plt.loglog(qs, hsh, label="Hash (build + search)")
+    plt.axvline(1.2e6, color="gray", linestyle="--")
+    plt.xlabel("Number of searches q")
+    plt.ylabel(f"Total time (s), n = {r['n']:,}")
+    plt.grid(True, which="both", alpha=.3)
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig("fig_cumulative.png", dpi=150)
+    plt.close()
+    print("Saved results.csv, fig_comparisons.png, fig_time.png, fig_cumulative.png")
+if __name__ == "__main__":
+    run_tests()
+    save_and_plot(benchmark())
