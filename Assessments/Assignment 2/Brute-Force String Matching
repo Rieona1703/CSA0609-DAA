@@ -1,0 +1,34 @@
+
+#include <stdio.h>
+#include <string.h>
+
+void match(char text[], char pattern[]) {
+    int n = strlen(text);
+    int m = strlen(pattern);
+    int comparisons = 0;
+
+    for (int i = 0; i <= n - m; i++) {
+        int j;
+        for (j = 0; j < m; j++) {
+            comparisons++;
+            if (text[i + j] != pattern[j])
+                break;
+        }
+
+        if (j == m) {
+            printf("Match at index %d\n", i);
+            printf("Comparisons = %d\n", comparisons);
+            return;
+        }
+    }
+
+    printf("No match found\n");
+    printf("Comparisons = %d\n", comparisons);
+}
+
+int main() {
+    match("SECURITYALERT", "ALERT");
+    match("AAAAAAAAAA", "AAAAB");
+    match("MALWARESIGNATURE", "MAL");
+    return 0;
+}
